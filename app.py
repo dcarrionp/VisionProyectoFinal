@@ -1,402 +1,571 @@
-import cv2
-import os
-import numpy as np
-from flask import Flask, render_template, Response, jsonify, request, send_file
-import threading
-import time
-from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-import pickle
-from skimage.feature import hog
-import random
-import glob
-from werkzeug.utils import secure_filename
-import base64
-from io import BytesIO
-from PIL import Image
-import psutil
+# === IMPORTACIONES DE LIBRERÍAS ===
+import cv2  # OpenCV para procesamiento de imágenes y detección de características
+import os  # Manejo de archivos y directorios del sistema operativo
+import numpy as np  # Cálculos numéricos y manejo de arrays multidimensionales
+from flask import Flask, render_template, Response, jsonify, request, send_file  # Framework web para crear la aplicación
+import threading  # Manejo de hilos para ejecutar tareas en paralelo
+import time  # Funciones relacionadas con tiempo y delays
+from sklearn.svm import SVC  # Máquina de Vectores de Soporte para clasificación
+from sklearn.model_selection import train_test_split  # División de datos en entrenamiento y prueba
+from sklearn.metrics import accuracy_score  # Métrica para evaluar precisión del modelo
+import pickle  # Serialización de objetos Python para guardar/cargar modelos
+from skimage.feature import hog  # Extracción de características HOG (Histogram of Oriented Gradients)
+import random  # Generación de números aleatorios
+import glob  # Búsqueda de archivos con patrones específicos
+from werkzeug.utils import secure_filename  # Seguridad para nombres de archivos subidos
+import base64  # Codificación/decodificación base64 para imágenes
+from io import BytesIO  # Manejo de datos binarios en memoria
+from PIL import Image  # Procesamiento de imágenes con Pillow
+import psutil  # Monitoreo de recursos del sistema (CPU, memoria)
 
-# Configuración de Flask
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
-app.config['UPLOAD_FOLDER'] = 'uploads'
+# === CONFIGURACIÓN DE LA APLICACIÓN FLASK ===
+app = Flask(__name__)  # Crear instancia de la aplicación Flask
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Límite máximo de archivo: 16MB
+app.config['UPLOAD_FOLDER'] = 'uploads'  # Carpeta donde se guardarán los archivos subidos
 
-# Crear directorio de uploads
-os.makedirs('uploads', exist_ok=True)
+# === INICIALIZACIÓN DE DIRECTORIOS ===
+os.makedirs('uploads', exist_ok=True)  # Crear carpeta 'uploads' si no existe
 
-# Variables globales para métricas del sistema
+# === VARIABLES GLOBALES PARA MONITOREO DEL SISTEMA ===
 system_metrics = {
-    'fps': 0,
-    'memory': '0 MB',
-    'cpu': '0%',
-    'confidence': '0%',
-    'faces_detected': 0,
-    'objects_detected': 0,
-    'last_update': time.time()
+    'fps': 0,  # Frames por segundo del video en tiempo real
+    'memory': '0 MB',  # Uso de memoria RAM del sistema
+    'cpu': '0%',  # Porcentaje de uso de CPU
+    'confidence': '0%',  # Confianza promedio de las detecciones
+    'faces_detected': 0,  # Número de rostros detectados en el frame actual
+    'objects_detected': 0,  # Número de objetos específicos detectados
+    'last_update': time.time()  # Timestamp de la última actualización de métricas
 }
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
+# === CONFIGURACIÓN DE ARCHIVOS PERMITIDOS ===
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}  # Formatos de imagen válidos
 
 def allowed_file(filename):
+    """
+    Verifica si un archivo tiene una extensión válida
+    Args:
+        filename (str): Nombre del archivo a verificar
+    Returns:
+        bool: True si la extensión es válida, False en caso contrario
+    """
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS  # Obtener extensión y verificar si está permitida
 
+# === CLASE PRINCIPAL PARA DETECCIÓN DE ROSTROS Y OBJETOS ===
 class FaceDetectorLBP:
+    """
+    Clase principal que maneja:
+    1. Detección de rostros usando HOG + SVM
+    2. Detección de objetos específicos usando SIFT
+    3. Anonimización mediante pixelación
+    """
     def __init__(self):
-        self.classifier = None
-        self.svm_model = None
-        self.is_trained = False
-        self.training_progress = 0
-        self.window_size = (64, 64)  # Tamaño de ventana para HOG
+        # === VARIABLES PARA CLASIFICACIÓN DE ROSTROS ===
+        self.classifier = None  # Clasificador de OpenCV (no usado actualmente)
+        self.svm_model = None  # Modelo SVM entrenado para detectar rostros
+        self.is_trained = False  # Flag que indica si el modelo está entrenado
+        self.training_progress = 0  # Progreso del entrenamiento (0-100%)
+        self.window_size = (64, 64)  # Tamaño estándar para extraer características HOG
         
-        # SIFT detector and matcher para detectar objetos específicos
-        self.sift = cv2.SIFT_create()
-        self.matcher = cv2.BFMatcher()
-        self.reference_objects = {}  # Almacena características de objetos específicos subidos por el usuario
-        self.detect_objects = False  # Flag para activar/desactivar detección de objetos
-        self.anonymize_objects = True  # Flag para controlar si se anonimizan o solo se marcan los objetos
+        # === VARIABLES PARA DETECCIÓN DE OBJETOS ESPECÍFICOS ===
+        self.sift = cv2.SIFT_create()  # Detector SIFT para encontrar puntos clave
+        self.matcher = cv2.BFMatcher()  # Matcher para comparar características SIFT
+        self.reference_objects = {}  # Diccionario que almacena objetos de referencia subidos por el usuario
+        self.detect_objects = False  # Flag para activar/desactivar detección de objetos específicos
+        self.anonymize_objects = True  # Flag para controlar si pixelar objetos o solo marcarlos con rectángulo
         
-        # Métricas de rendimiento
-        self.frame_times = []
-        self.face_count = 0
-        self.object_count = 0
-        self.confidence_scores = []
+        # === VARIABLES PARA MÉTRICAS DE RENDIMIENTO ===
+        self.frame_times = []  # Lista de tiempos de procesamiento por frame
+        self.face_count = 0  # Contador de rostros detectados en el frame actual
+        self.object_count = 0  # Contador de objetos específicos detectados
+        self.confidence_scores = []  # Lista de scores de confianza de las detecciones
         
     def extract_hog_features(self, image):
-        """Extrae características HOG de una imagen"""
-        # Redimensionar imagen
+        """
+        Extrae características HOG (Histogram of Oriented Gradients) de una imagen
+        HOG es un descriptor de características que cuenta la orientación de gradientes
+        en regiones localizadas de una imagen, útil para detección de objetos
+        
+        Args:
+            image: Imagen de entrada (puede ser color o escala de grises)
+        Returns:
+            array: Vector de características HOG de dimensión fija
+        """
+        # Redimensionar imagen al tamaño estándar de ventana (64x64 píxeles)
         image_resized = cv2.resize(image, self.window_size)
         
-        # Convertir a escala de grises si es necesario
+        # Convertir a escala de grises si la imagen es a color (tiene 3 canales)
         if len(image_resized.shape) == 3:
-            image_gray = cv2.cvtColor(image_resized, cv2.COLOR_BGR2GRAY)
+            image_gray = cv2.cvtColor(image_resized, cv2.COLOR_BGR2GRAY)  # BGR a escala de grises
         else:
-            image_gray = image_resized
+            image_gray = image_resized  # Ya está en escala de grises
             
-        # Extraer características HOG
+        # Extraer características HOG con parámetros específicos:
+        # - orientations=9: 9 bins para direcciones de gradientes (0-180°)
+        # - pixels_per_cell=(8,8): cada celda de 8x8 píxeles
+        # - cells_per_block=(2,2): cada bloque contiene 2x2 celdas para normalización
+        # - visualize=False: no generar imagen de visualización
         features = hog(image_gray, 
                       orientations=9, 
                       pixels_per_cell=(8, 8),
                       cells_per_block=(2, 2), 
                       visualize=False)
-        return features
+        return features  # Retorna vector de características de dimensión fija
     
     def load_dataset(self):
-        """Carga y procesa el dataset completo"""
+        """
+        Carga y procesa el dataset completo para entrenar el clasificador de rostros
+        Lee imágenes positivas (rostros) y negativas (no-rostros) desde directorios específicos
+        
+        Returns:
+            tuple: (features, labels) - arrays de numpy con características y etiquetas
+        """
         print("Cargando dataset...")
         
-        features = []
-        labels = []
+        features = []  # Lista para almacenar vectores de características HOG
+        labels = []    # Lista para almacenar etiquetas (1=rostro, 0=no-rostro)
         
-        # Cargar imágenes POSITIVAS (rostros)
-        positive_path = "dataset/positive/person"
-        positive_count = 0
-        if os.path.exists(positive_path):
-            for img_file in os.listdir(positive_path):
+        # === CARGAR IMÁGENES POSITIVAS (ROSTROS) ===
+        positive_path = "dataset/positive/person"  # Ruta donde están las imágenes de rostros
+        positive_count = 0  # Contador de imágenes positivas procesadas
+        
+        if os.path.exists(positive_path):  # Verificar que el directorio existe
+            for img_file in os.listdir(positive_path):  # Iterar sobre todos los archivos
+                # Verificar que el archivo tenga extensión de imagen válida
                 if img_file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-                    img_path = os.path.join(positive_path, img_file)
+                    img_path = os.path.join(positive_path, img_file)  # Ruta completa del archivo
                     try:
-                        image = cv2.imread(img_path)
-                        if image is not None:
-                            # Extraer características HOG
+                        image = cv2.imread(img_path)  # Cargar imagen con OpenCV
+                        if image is not None:  # Verificar que la imagen se cargó correctamente
+                            # Extraer características HOG de la imagen
                             hog_features = self.extract_hog_features(image)
-                            features.append(hog_features)
-                            labels.append(1)  # 1 = rostro
-                            positive_count += 1
+                            features.append(hog_features)  # Agregar características a la lista
+                            labels.append(1)  # Etiqueta 1 = rostro (clase positiva)
+                            positive_count += 1  # Incrementar contador
                             
+                            # Mostrar progreso cada 100 imágenes procesadas
                             if positive_count % 100 == 0:
                                 print(f"Procesadas {positive_count} imágenes positivas...")
                     except Exception as e:
                         print(f"Error procesando {img_path}: {e}")
-                        continue
+                        continue  # Continuar con la siguiente imagen si hay error
         
         print(f"Total imágenes positivas procesadas: {positive_count}")
         
-        # Cargar imágenes NEGATIVAS (no rostros)
-        negative_path = "dataset/negative"
-        negative_count = 0
-        max_negatives = positive_count * 2  # Balancear dataset
+        # === CARGAR IMÁGENES NEGATIVAS (NO-ROSTROS) ===
+        negative_path = "dataset/negative"  # Ruta donde están las imágenes sin rostros
+        negative_count = 0  # Contador de imágenes negativas procesadas
+        max_negatives = positive_count * 2  # Usar el doble de imágenes negativas para balancear dataset
+        # === RECOPILAR TODAS LAS IMÁGENES NEGATIVAS ===
+        negative_files = []  # Lista para almacenar rutas de archivos negativos
         
-        negative_files = []
-        for category in os.listdir(negative_path):
-            category_path = os.path.join(negative_path, category)
-            if os.path.isdir(category_path):
+        # Buscar en todas las subcategorías del directorio negative
+        for category in os.listdir(negative_path):  # Iterar sobre subcarpetas (ej: animals, objects, etc.)
+            category_path = os.path.join(negative_path, category)  # Ruta completa de la subcarpeta
+            if os.path.isdir(category_path):  # Verificar que es un directorio
+                # Buscar imágenes en la subcarpeta
                 for img_file in os.listdir(category_path):
                     if img_file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-                        negative_files.append(os.path.join(category_path, img_file))
+                        negative_files.append(os.path.join(category_path, img_file))  # Agregar ruta completa
         
-        # Mezclar y limitar imágenes negativas
-        random.shuffle(negative_files)
-        negative_files = negative_files[:max_negatives]
+        # === BALANCEAR EL DATASET ===
+        random.shuffle(negative_files)  # Mezclar aleatoriamente las imágenes negativas
+        negative_files = negative_files[:max_negatives]  # Limitar al número máximo calculado
         
-        for img_path in negative_files:
+        # === PROCESAR IMÁGENES NEGATIVAS ===
+        for img_path in negative_files:  # Iterar sobre las imágenes negativas seleccionadas
             try:
-                image = cv2.imread(img_path)
-                if image is not None:
-                    # Extraer características HOG
+                image = cv2.imread(img_path)  # Cargar imagen
+                if image is not None:  # Verificar que se cargó correctamente
+                    # Extraer características HOG de la imagen negativa
                     hog_features = self.extract_hog_features(image)
-                    features.append(hog_features)
-                    labels.append(0)  # 0 = no rostro
-                    negative_count += 1
+                    features.append(hog_features)  # Agregar características a la lista
+                    labels.append(0)  # Etiqueta 0 = no-rostro (clase negativa)
+                    negative_count += 1  # Incrementar contador
                     
+                    # Mostrar progreso cada 100 imágenes procesadas
                     if negative_count % 100 == 0:
                         print(f"Procesadas {negative_count} imágenes negativas...")
             except Exception as e:
                 print(f"Error procesando {img_path}: {e}")
-                continue
+                continue  # Continuar con la siguiente imagen si hay error
         
+        # === RESUMEN DEL DATASET CARGADO ===
         print(f"Total imágenes negativas procesadas: {negative_count}")
         print(f"Dataset total: {len(features)} imágenes")
         
+        # Convertir listas a arrays de numpy para compatibilidad con scikit-learn
         return np.array(features), np.array(labels)
     
     def train_classifier(self):
-        """Entrena el clasificador SVM con características HOG REALMENTE"""
+        """
+        Entrena el clasificador SVM usando características HOG extraídas del dataset
+        Este es el proceso principal de machine learning del sistema
+        
+        Returns:
+            bool: True si el entrenamiento fue exitoso, False en caso contrario
+        """
         print("=== INICIANDO ENTRENAMIENTO REAL ===")
         print("Esto puede tomar varios minutos...")
         
         try:
-            # Paso 1: Cargar y procesar dataset
-            self.training_progress = 10
-            features, labels = self.load_dataset()
+            # === PASO 1: CARGAR Y PROCESAR DATASET ===
+            self.training_progress = 10  # Actualizar progreso para la interfaz web
+            features, labels = self.load_dataset()  # Cargar imágenes y extraer características HOG
             
+            # Verificar que se cargaron datos
             if len(features) == 0:
                 print("Error: No se pudieron cargar imágenes del dataset")
                 return False
             
-            self.training_progress = 30
+            self.training_progress = 30  # Actualizar progreso
             
-            # Paso 2: Dividir en entrenamiento y prueba
+            # === PASO 2: DIVIDIR DATASET EN ENTRENAMIENTO Y PRUEBA ===
             print("Dividiendo dataset...")
+            # Usar 80% para entrenamiento, 20% para prueba
+            # stratify=labels asegura que ambos conjuntos tengan proporción similar de clases
+            # random_state=42 hace que la división sea reproducible
             X_train, X_test, y_train, y_test = train_test_split(
                 features, labels, test_size=0.2, random_state=42, stratify=labels
             )
             
-            self.training_progress = 50
+            self.training_progress = 50  # Actualizar progreso
             
-            # Paso 3: Entrenar SVM
+            # === PASO 3: ENTRENAR MODELO SVM ===
             print("Entrenando modelo SVM...")
             print(f"Datos de entrenamiento: {len(X_train)} muestras")
             print(f"Datos de prueba: {len(X_test)} muestras")
             
+            # Crear y configurar modelo SVM:
+            # - kernel='rbf': usa kernel radial (gaussiano) para separación no-lineal
+            # - C=1.0: parámetro de regularización (controla trade-off entre margen y errores)
+            # - gamma='scale': parámetro del kernel RBF (valor automático basado en características)
+            # - probability=True: habilita cálculo de probabilidades para confianza
             self.svm_model = SVC(kernel='rbf', C=1.0, gamma='scale', probability=True)
-            self.svm_model.fit(X_train, y_train)
+            self.svm_model.fit(X_train, y_train)  # Entrenar el modelo con datos de entrenamiento
             
-            self.training_progress = 80
+            self.training_progress = 80  # Actualizar progreso
             
-            # Paso 4: Evaluar modelo
+            # === PASO 4: EVALUAR RENDIMIENTO DEL MODELO ===
             print("Evaluando modelo...")
-            y_pred = self.svm_model.predict(X_test)
-            accuracy = accuracy_score(y_test, y_pred)
+            y_pred = self.svm_model.predict(X_test)  # Hacer predicciones en datos de prueba
+            accuracy = accuracy_score(y_test, y_pred)  # Calcular precisión (accuracy)
             print(f"Precisión del modelo: {accuracy:.2%}")
             
-            self.training_progress = 90
+            self.training_progress = 90  # Actualizar progreso
             
-            # Paso 5: Guardar modelo entrenado
+            # === PASO 5: GUARDAR MODELO ENTRENADO ===
             print("Guardando modelo...")
-            os.makedirs("trained_model", exist_ok=True)
+            os.makedirs("trained_model", exist_ok=True)  # Crear carpeta si no existe
+            # Serializar modelo usando pickle para poder cargarlo después
             with open("trained_model/face_detector_svm.pkl", "wb") as f:
                 pickle.dump(self.svm_model, f)
             
-            self.is_trained = True
-            self.training_progress = 100
+            # === FINALIZAR ENTRENAMIENTO ===
+            self.is_trained = True  # Marcar que el modelo está listo
+            self.training_progress = 100  # Entrenamiento completado
             
             print("=== ENTRENAMIENTO COMPLETADO ===")
             print(f"Modelo entrenado con {len(features)} imágenes")
             print(f"Precisión: {accuracy:.2%}")
             print("Modelo guardado en: trained_model/face_detector_svm.pkl")
             
-            return True
+            return True  # Entrenamiento exitoso
             
         except Exception as e:
             print(f"Error durante el entrenamiento: {e}")
-            return False
+            return False  # Entrenamiento falló
     
     def load_trained_model(self):
-        """Carga un modelo previamente entrenado"""
-        model_path = "trained_model/face_detector_svm.pkl"
-        if os.path.exists(model_path):
+        """
+        Carga un modelo SVM previamente entrenado desde disco
+        Útil para evitar re-entrenar cada vez que se inicia la aplicación
+        
+        Returns:
+            bool: True si el modelo se cargó exitosamente, False en caso contrario
+        """
+        model_path = "trained_model/face_detector_svm.pkl"  # Ruta del modelo guardado
+        
+        if os.path.exists(model_path):  # Verificar que el archivo existe
             try:
+                # Deserializar modelo usando pickle
                 with open(model_path, "rb") as f:
                     self.svm_model = pickle.load(f)
-                self.is_trained = True
-                self.training_progress = 100
+                
+                # Actualizar estados internos
+                self.is_trained = True  # Marcar que el modelo está listo
+                self.training_progress = 100  # Progreso completo
                 print("Modelo entrenado cargado exitosamente")
-                return True
+                return True  # Carga exitosa
+                
             except Exception as e:
                 print(f"Error al cargar modelo: {e}")
-        return False
+        return False  # No se pudo cargar
     
     def detect_faces(self, frame):
-        """Detecta rostros usando híbrido: OpenCV rápido + modelo entrenado para validación"""
-        start_time = time.time()
+        """
+        Detecta rostros usando un enfoque híbrido de dos etapas:
+        1. Detección rápida con cascadas Haar de OpenCV
+        2. Validación con modelo SVM entrenado (si está disponible)
         
-        # PASO 1: Usar detector rápido de OpenCV para encontrar candidatos
+        Args:
+            frame: Frame de video o imagen donde detectar rostros
+        Returns:
+            frame: Frame modificado con rostros pixelados y marcados
+        """
+        start_time = time.time()  # Iniciar cronómetro para medir rendimiento
+        
+        # === PASO 1: DETECCIÓN RÁPIDA CON OPENCV ===
+        # Cargar clasificador de cascadas Haar pre-entrenado para rostros frontales
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # Convertir a escala de grises
+        
+        # Detectar rostros candidatos:
+        # - scaleFactor=1.1: factor de escala entre niveles de imagen (más pequeño = más preciso pero más lento)
+        # - minNeighbors=4: número mínimo de detecciones vecinas requeridas
+        # - minSize=(50,50): tamaño mínimo de rostro en píxeles
         faces = face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(50, 50))
         
-        validated_faces = []
+        validated_faces = []  # Lista para almacenar rostros validados
         
-        # PASO 2: Si tenemos modelo entrenado, validar cada detección
-        if self.is_trained and self.svm_model is not None:
-            for (x, y, w, h) in faces:
-                # Extraer región del rostro candidato
+        # === PASO 2: VALIDACIÓN CON MODELO SVM ENTRENADO ===
+        if self.is_trained and self.svm_model is not None:  # Si tenemos modelo entrenado disponible
+            for (x, y, w, h) in faces:  # Iterar sobre cada rostro candidato detectado
+                # Extraer región rectangular del rostro candidato
                 face_region = frame[y:y+h, x:x+w]
                 
                 try:
-                    # Extraer características HOG de la región
+                    # Extraer características HOG de la región del rostro
                     hog_features = self.extract_hog_features(face_region)
                     
-                    # Validar con nuestro modelo entrenado
-                    prediction = self.svm_model.predict([hog_features])[0]
-                    probability = self.svm_model.predict_proba([hog_features])[0]
+                    # Hacer predicción con nuestro modelo SVM entrenado
+                    prediction = self.svm_model.predict([hog_features])[0]  # Clase predicha (0 o 1)
+                    probability = self.svm_model.predict_proba([hog_features])[0]  # Probabilidades de cada clase
                     
-                    # Si nuestro modelo también dice que es rostro
-                    if prediction == 1 and probability[1] > 0.6:  # Umbral más permisivo
-                        validated_faces.append((x, y, w, h, probability[1], "TRAINED"))
+                    # Decidir si es un rostro válido basado en predicción y confianza
+                    if prediction == 1 and probability[1] > 0.6:  # Umbral de confianza del 60%
+                        validated_faces.append((x, y, w, h, probability[1], "TRAINED"))  # Rostro validado por SVM
                     else:
-                        # Usar detección básica si nuestro modelo no está seguro
+                        # Si SVM no está seguro, usar detección básica con menor confianza
                         validated_faces.append((x, y, w, h, 0.8, "BASIC"))
+                        
                 except:
-                    # Si hay error, usar detección básica
+                    # Si hay error en el procesamiento SVM, usar detección básica
                     validated_faces.append((x, y, w, h, 0.8, "BASIC"))
         else:
-            # Si no tenemos modelo entrenado, usar todas las detecciones básicas
+            # === FALLBACK: SOLO DETECCIÓN BÁSICA ===
+            # Si no tenemos modelo entrenado, usar todas las detecciones de OpenCV
             for (x, y, w, h) in faces:
                 validated_faces.append((x, y, w, h, 0.8, "BASIC"))
-        
-        # PASO 3: Pixelar todos los rostros detectados
-        for (x, y, w, h, conf, method) in validated_faces:
-            # Extraer región del rostro
+        # === PASO 3: ANONIMIZACIÓN MEDIANTE PIXELACIÓN ===
+        for (x, y, w, h, conf, method) in validated_faces:  # Procesar cada rostro validado
+            # Extraer región rectangular del rostro del frame original
             face_region = frame[y:y+h, x:x+w]
             
-            # Pixelar con diferentes intensidades según el método
+            # === APLICAR PIXELACIÓN CON DIFERENTES INTENSIDADES ===
             if method == "TRAINED":
-                # Pixelación más fuerte para detecciones validadas
+                # Pixelación más agresiva para rostros validados por SVM (más confiables)
+                # Reducir a 8x8 píxeles para mayor anonimización
                 small = cv2.resize(face_region, (8, 8), interpolation=cv2.INTER_LINEAR)
             else:
-                # Pixelación estándar para detecciones básicas
+                # Pixelación moderada para detecciones básicas (menos confiables)
+                # Reducir a 12x12 píxeles para preservar algo más de detalle
                 small = cv2.resize(face_region, (12, 12), interpolation=cv2.INTER_LINEAR)
             
+            # Redimensionar de vuelta al tamaño original con interpolación pixelada
+            # INTER_NEAREST mantiene el efecto de bloques/píxeles grandes
             pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
             
-            # Reemplazar región
+            # === REEMPLAZAR REGIÓN ORIGINAL CON VERSIÓN PIXELADA ===
             frame[y:y+h, x:x+w] = pixelated
             
-            # Dibujar rectángulo con colores diferentes
+            # === DIBUJAR MARCADORES VISUALES ===
+            # Usar colores diferentes para distinguir tipos de detección
             if method == "TRAINED":
-                color = (0, 255, 0)  # Verde para validadas
+                color = (0, 255, 0)  # Verde para rostros validados por SVM
             else:
-                color = (0, 255, 255)  # Amarillo para básicas
+                color = (0, 255, 255)  # Amarillo para detecciones básicas
             
+            # Dibujar rectángulo alrededor del rostro
             cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
+            
+            # Agregar etiqueta con tipo de detección y confianza
             cv2.putText(frame, f'{method} {conf:.2f}', (x, y-10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         
-        # Actualizar métricas
-        self.face_count = len(validated_faces)
-        self.confidence_scores = [conf for _, _, _, _, conf, _ in validated_faces]
-        self._update_frame_time(start_time)
+        # === ACTUALIZAR MÉTRICAS DE RENDIMIENTO ===
+        self.face_count = len(validated_faces)  # Número de rostros detectados
+        self.confidence_scores = [conf for _, _, _, _, conf, _ in validated_faces]  # Scores de confianza
+        self._update_frame_time(start_time)  # Actualizar tiempo de procesamiento para FPS
         
-        return frame
+        return frame  # Retornar frame procesado con rostros anonimizados
 
     def _update_frame_time(self, start_time):
-        """Actualiza el tiempo de frame para calcular FPS"""
-        frame_time = time.time() - start_time
-        self.frame_times.append(frame_time)
+        """
+        Actualiza la lista de tiempos de procesamiento para calcular FPS promedio
+        Mantiene un historial deslizante de los últimos 30 frames
+        
+        Args:
+            start_time: Timestamp de cuando comenzó el procesamiento del frame
+        """
+        frame_time = time.time() - start_time  # Calcular tiempo transcurrido
+        self.frame_times.append(frame_time)  # Agregar a la lista de tiempos
+        
         # Mantener solo los últimos 30 frames para calcular FPS promedio
+        # Esto evita que la lista crezca indefinidamente y proporciona métricas más actuales
         if len(self.frame_times) > 30:
-            self.frame_times.pop(0)
+            self.frame_times.pop(0)  # Eliminar el tiempo más antiguo
     
     def get_current_fps(self):
-        """Calcula FPS actual basado en los tiempos de frame recientes"""
-        if len(self.frame_times) < 2:
+        """
+        Calcula FPS (Frames Per Second) actual basado en los tiempos de frame recientes
+        
+        Returns:
+            float: FPS promedio redondeado a 1 decimal, 0 si no hay suficientes datos
+        """
+        if len(self.frame_times) < 2:  # Necesitamos al menos 2 frames para calcular FPS
             return 0
+        
+        # Calcular tiempo promedio por frame
         avg_frame_time = sum(self.frame_times) / len(self.frame_times)
+        
+        # FPS = 1 / tiempo_por_frame, con protección contra división por cero
         return round(1.0 / avg_frame_time, 1) if avg_frame_time > 0 else 0
     
     def get_average_confidence(self):
-        """Calcula confianza promedio de las detecciones recientes"""
-        if not self.confidence_scores:
+        """
+        Calcula la confianza promedio de las detecciones recientes
+        
+        Returns:
+            float: Confianza promedio como porcentaje (0-100%), 0 si no hay detecciones
+        """
+        if not self.confidence_scores:  # Si no hay scores de confianza
             return 0
-        return round(sum(self.confidence_scores) / len(self.confidence_scores) * 100, 1)
+        
+        # Calcular promedio de confianzas y convertir a porcentaje
+        avg_confidence = sum(self.confidence_scores) / len(self.confidence_scores)
+        return round(avg_confidence * 100, 1)  # Multiplicar por 100 para porcentaje
     
     def non_max_suppression(self, detections, overlap_threshold=0.3):
-        """Supresión de no-máximos para eliminar detecciones duplicadas"""
-        if len(detections) == 0:
+        """
+        Implementa supresión de no-máximos para eliminar detecciones duplicadas/superpuestas
+        Algoritmo usado en detección de objetos para limpiar resultados
+        
+        Args:
+            detections: Lista de detecciones [(x, y, w, h, confidence, ...)]
+            overlap_threshold: Umbral de superposición máxima permitida (0.0-1.0)
+        Returns:
+            list: Lista filtrada de detecciones sin duplicados
+        """
+        if len(detections) == 0:  # Si no hay detecciones, retornar lista vacía
             return []
         
-        # Ordenar por confianza
+        # === ORDENAR POR CONFIANZA (MAYOR A MENOR) ===
+        # Las detecciones con mayor confianza tienen prioridad
         detections = sorted(detections, key=lambda x: x[4], reverse=True)
         
-        selected = []
-        while detections:
-            current = detections.pop(0)
-            selected.append(current)
-            
-            # Eliminar detecciones que se superponen mucho
-            detections = [det for det in detections if self.calculate_overlap(current, det) < overlap_threshold]
+        selected = []  # Lista de detecciones seleccionadas (sin duplicados)
         
-        return selected
+        # === ALGORITMO DE SUPRESIÓN ===
+        while detections:  # Mientras queden detecciones por procesar
+            current = detections.pop(0)  # Tomar la detección con mayor confianza restante
+            selected.append(current)  # Agregar a seleccionadas
+            
+            # Eliminar detecciones que se superponen demasiado con la actual
+            # Mantener solo las que tienen overlap menor al umbral
+            detections = [det for det in detections 
+                         if self.calculate_overlap(current, det) < overlap_threshold]
+        
+        return selected  # Retornar detecciones filtradas
     
     def calculate_overlap(self, det1, det2):
-        """Calcula el overlap entre dos detecciones"""
-        x1, y1, w1, h1, _ = det1
-        x2, y2, w2, h2, _ = det2
+        """
+        Calcula el IoU (Intersection over Union) entre dos detecciones rectangulares
+        Métrica estándar para medir superposición entre bounding boxes
         
-        # Calcular intersección
-        xi1 = max(x1, x2)
-        yi1 = max(y1, y2)
-        xi2 = min(x1 + w1, x2 + w2)
-        yi2 = min(y1 + h1, y2 + h2)
+        Args:
+            det1: Primera detección (x, y, w, h, confidence, ...)
+            det2: Segunda detección (x, y, w, h, confidence, ...)
+        Returns:
+            float: Valor IoU entre 0.0 (sin superposición) y 1.0 (superposición completa)
+        """
+        # Extraer coordenadas y dimensiones de ambas detecciones
+        x1, y1, w1, h1, _ = det1  # Primera detección
+        x2, y2, w2, h2, _ = det2  # Segunda detección
         
-        if xi2 <= xi1 or yi2 <= yi1:
+        # === CALCULAR COORDENADAS DE LA INTERSECCIÓN ===
+        # La intersección es el rectángulo formado por el área común
+        xi1 = max(x1, x2)        # Coordenada x izquierda de la intersección
+        yi1 = max(y1, y2)        # Coordenada y superior de la intersección
+        xi2 = min(x1 + w1, x2 + w2)  # Coordenada x derecha de la intersección
+        yi2 = min(y1 + h1, y2 + h2)  # Coordenada y inferior de la intersección
+        
+        # Verificar si hay intersección real
+        if xi2 <= xi1 or yi2 <= yi1:  # No hay superposición
             return 0
         
-        intersection = (xi2 - xi1) * (yi2 - yi1)
-        area1 = w1 * h1
-        area2 = w2 * h2
-        union = area1 + area2 - intersection
+        # === CALCULAR ÁREAS ===
+        intersection = (xi2 - xi1) * (yi2 - yi1)  # Área de intersección
+        area1 = w1 * h1  # Área de la primera detección
+        area2 = w2 * h2  # Área de la segunda detección
+        union = area1 + area2 - intersection  # Área de unión (sin doble conteo)
         
+        # === CALCULAR IoU ===
+        # IoU = Intersección / Unión
         return intersection / union if union > 0 else 0
     
     def load_reference_objects(self):
-        """Carga imágenes de referencia específicas subidas por el usuario"""
+        """
+        Carga imágenes de referencia específicas subidas por el usuario para detección SIFT
+        Estas imágenes servirán como plantillas para buscar objetos específicos en tiempo real
+        
+        Returns:
+            bool: True si se cargaron objetos, False si no se encontraron
+        """
         print("DEBUG: Cargando objetos de referencia específicos...")
-        self.reference_objects = {}
+        self.reference_objects = {}  # Reiniciar diccionario de objetos
         
-        # Cargar objetos específicos desde la carpeta uploads/referencias/
-        ref_path = "uploads/referencias/"
-        if not os.path.exists(ref_path):
-            os.makedirs(ref_path, exist_ok=True)
+        # === CONFIGURAR CARPETA DE REFERENCIAS ===
+        ref_path = "uploads/referencias/"  # Carpeta donde se guardan las imágenes de referencia
+        if not os.path.exists(ref_path):  # Si no existe la carpeta
+            os.makedirs(ref_path, exist_ok=True)  # Crearla
             print("DEBUG: Carpeta de referencias creada")
-            return False
+            return False  # No hay objetos que cargar aún
         
-        # Buscar todas las imágenes en la carpeta de referencias
+        # === BUSCAR ARCHIVOS DE IMAGEN EN LA CARPETA ===
+        # Buscar todos los formatos de imagen soportados
         ref_files = glob.glob(os.path.join(ref_path, "*.jpg")) + \
                    glob.glob(os.path.join(ref_path, "*.jpeg")) + \
                    glob.glob(os.path.join(ref_path, "*.png"))
         
         print(f"DEBUG: Encontrados {len(ref_files)} archivos de referencia")
         
+        # === PROCESAR CADA IMAGEN DE REFERENCIA ===
         if ref_files:
-            for img_path in ref_files:
+            for img_path in ref_files:  # Iterar sobre cada archivo encontrado
                 print(f"DEBUG: Procesando archivo: {img_path}")
+                
+                # Cargar imagen en escala de grises (SIFT funciona mejor en grayscale)
                 img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-                if img is not None:
-                    # Aplicar el mismo procesamiento que en detect_objects_sift
-                    img_enhanced = cv2.equalizeHist(img)
+                
+                if img is not None:  # Si la imagen se cargó correctamente
+                    # === MEJORAR CONTRASTE PARA MEJOR EXTRACCIÓN SIFT ===
+                    img_enhanced = cv2.equalizeHist(img)  # Ecualización de histograma
+                    
+                    # Extraer puntos clave (keypoints) y descriptores SIFT
                     kp, des = self.sift.detectAndCompute(img_enhanced, None)
                     
+                    # Si falló con imagen mejorada, intentar con original
                     if des is None:
-                        # Intentar con imagen original
                         kp, des = self.sift.detectAndCompute(img, None)
                     
-                    if des is not None and len(kp) >= 4:  # Mismo umbral que detect_objects_sift
-                        # Usar el nombre del archivo como identificador del objeto específico
+                    # === VALIDAR CALIDAD DE LA EXTRACCIÓN ===
+                    # Necesitamos al menos 4 keypoints para hacer matching robusto
+                    if des is not None and len(kp) >= 4:
+                        # Usar nombre del archivo (sin extensión) como identificador
                         obj_name = os.path.splitext(os.path.basename(img_path))[0]
+                        
+                        # Guardar: (keypoints, descriptores, ruta_archivo)
                         self.reference_objects[obj_name] = (kp, des, img_path)
                         print(f"DEBUG: Cargado objeto específico: {obj_name} con {len(kp)} keypoints")
                     else:
@@ -404,11 +573,12 @@ class FaceDetectorLBP:
                 else:
                     print(f"DEBUG: No se pudo cargar imagen {img_path}")
         
+        # === RESUMEN DE CARGA ===
         print(f"DEBUG: Total de objetos específicos cargados: {len(self.reference_objects)}")
         for obj_name in self.reference_objects.keys():
             print(f"DEBUG: - {obj_name}")
         
-        return len(self.reference_objects) > 0
+        return len(self.reference_objects) > 0  # True si se cargó al menos un objeto
     
     def add_reference_object(self, image_path, object_name):
         """Agrega un objeto de referencia específico"""
@@ -454,27 +624,46 @@ class FaceDetectorLBP:
         return True, f"Objeto '{object_name}' agregado exitosamente con {len(kp)} características SIFT"
     
     def detect_objects_sift(self, frame):
-        """Detecta objetos específicos usando SIFT y también detecta rostros automáticamente"""
-        # PRIMERO: Detectar y anonimizar rostros automáticamente cuando SIFT está activo
-        if self.is_trained:
-            frame = self.detect_faces(frame)
+        """
+        Detecta objetos específicos usando SIFT (Scale-Invariant Feature Transform)
+        También ejecuta detección de rostros automáticamente cuando está activo
         
-        # SEGUNDO: Detectar objetos específicos si está configurado
+        SIFT es un algoritmo que:
+        1. Detecta puntos clave invariantes a escala, rotación e iluminación
+        2. Genera descriptores únicos para cada punto clave
+        3. Permite encontrar objetos específicos mediante matching de descriptores
+        
+        Args:
+            frame: Frame de video donde buscar objetos y rostros
+        Returns:
+            frame: Frame procesado con detecciones marcadas/anonimizadas
+        """
+        
+        # === PASO 1: DETECCIÓN AUTOMÁTICA DE ROSTROS ===
+        # Siempre detectar rostros cuando SIFT está activo (comportamiento híbrido)
+        if self.is_trained:  # Si tenemos modelo de rostros entrenado
+            frame = self.detect_faces(frame)  # Aplicar detección y anonimización de rostros
+        
+        # === PASO 2: VERIFICAR SI PROCEDER CON DETECCIÓN DE OBJETOS ===
+        # Solo continuar si la detección de objetos está habilitada y hay referencias cargadas
         if not self.detect_objects or not self.reference_objects:
-            return frame
+            return frame  # Retornar frame solo con detección de rostros
         
-        # Convertir frame a escala de grises
+        # === PASO 3: PREPARAR FRAME PARA SIFT ===
+        # Convertir frame a escala de grises (SIFT funciona mejor en grayscale)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Aplicar mejora de contraste similar a las referencias
+        # Aplicar mejora de contraste igual que en las referencias
+        # Esto asegura consistencia en la extracción de características
         gray_enhanced = cv2.equalizeHist(gray)
         
-        # Extraer características SIFT del frame mejorado
+        # === PASO 4: EXTRAER CARACTERÍSTICAS SIFT DEL FRAME ===
         kp_frame, des_frame = self.sift.detectAndCompute(gray_enhanced, None)
         
+        # Verificar que se extrajeron características del frame
         if des_frame is None:
             print("DEBUG: No se pudieron extraer características SIFT del frame")
-            return frame
+            return frame  # No hay características para hacer matching
         
         print(f"DEBUG: Frame tiene {len(kp_frame)} keypoints SIFT")
         

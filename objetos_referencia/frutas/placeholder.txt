@@ -1,9 +1,0 @@
-Coloca aquí imágenes de referencia de frutas para el detector SIFT.
-- Formatos soportados: .jpg, .jpeg, .png
-- Recomendación: Imágenes claras con diferentes ángulos del objeto
-- Estas imágenes se usarán para extraer puntos SIFT característicos
-
-Ejemplos de nombres de archivo:
-- manzana1.jpg
-- naranja.png
-- platano.jpeg

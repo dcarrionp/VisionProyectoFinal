@@ -1,158 +1,188 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detector de Rostros LBP</title>
+    <!-- === CONFIGURACIÓN DE LA PÁGINA === -->
+    <meta charset="UTF-8"> <!-- Codificación de caracteres UTF-8 para soportar caracteres especiales -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- Responsive: ajustar a diferentes tamaños de pantalla -->
+    <title>Detector de Rostros LBP</title> <!-- Título que aparece en la pestaña del navegador -->
+    
+    <!-- === ESTILOS CSS EMBEBIDOS === -->
     <style>
+        /* === ESTILOS GENERALES DEL CUERPO === */
         body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
+            font-family: Arial, sans-serif; /* Fuente sans-serif para mejor legibilidad */
+            max-width: 1200px; /* Ancho máximo para evitar líneas muy largas en pantallas grandes */
+            margin: 0 auto; /* Centrar contenido horizontalmente */
+            padding: 20px; /* Espaciado interno */
+            background-color: #f5f5f5; /* Color de fondo gris claro */
         }
+        
+        /* === CONTENEDOR PRINCIPAL === */
         .container {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            background-color: white; /* Fondo blanco para contraste */
+            padding: 30px; /* Espaciado interno generoso */
+            border-radius: 10px; /* Bordes redondeados */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); /* Sombra sutil para efecto de elevación */
         }
+        
+        /* === TÍTULO PRINCIPAL === */
         h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
+            text-align: center; /* Centrar título */
+            color: #333; /* Color gris oscuro */
+            margin-bottom: 30px; /* Espacio debajo del título */
         }
+        
+        /* === ÁREA DE CONTROLES === */
         .controls {
-            text-align: center;
-            margin-bottom: 30px;
+            text-align: center; /* Centrar controles */
+            margin-bottom: 30px; /* Espacio debajo de cada sección de controles */
         }
+        /* === ESTILOS DE BOTONES === */
         button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            margin: 10px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
+            background-color: #007bff; /* Color azul de Bootstrap */
+            color: white; /* Texto blanco para contraste */
+            border: none; /* Sin borde */
+            padding: 12px 24px; /* Espaciado interno (vertical horizontal) */
+            margin: 10px; /* Margen alrededor del botón */
+            border-radius: 5px; /* Bordes ligeramente redondeados */
+            cursor: pointer; /* Cursor de mano al pasar sobre el botón */
+            font-size: 16px; /* Tamaño de fuente legible */
         }
+        
+        /* === EFECTOS HOVER Y ESTADOS DE BOTONES === */
         button:hover {
-            background-color: #0056b3;
+            background-color: #0056b3; /* Color más oscuro al pasar el mouse */
         }
         button:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
+            background-color: #6c757d; /* Color gris cuando está deshabilitado */
+            cursor: not-allowed; /* Cursor de "no permitido" */
         }
+        
+        /* === ESTILOS DE MENSAJES DE ESTADO === */
         .status {
-            text-align: center;
-            margin: 20px 0;
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: bold;
+            text-align: center; /* Centrar texto */
+            margin: 20px 0; /* Margen vertical */
+            padding: 10px; /* Espaciado interno */
+            border-radius: 5px; /* Bordes redondeados */
+            font-weight: bold; /* Texto en negrita para resaltar */
         }
+        
+        /* === DIFERENTES TIPOS DE MENSAJES === */
         .status.info {
-            background-color: #d1ecf1;
-            color: #0c5460;
+            background-color: #d1ecf1; /* Fondo azul claro para información */
+            color: #0c5460; /* Texto azul oscuro */
         }
         .status.success {
-            background-color: #d4edda;
-            color: #155724;
+            background-color: #d4edda; /* Fondo verde claro para éxito */
+            color: #155724; /* Texto verde oscuro */
         }
         .status.warning {
-            background-color: #fff3cd;
-            color: #856404;
+            background-color: #fff3cd; /* Fondo amarillo claro para advertencias */
+            color: #856404; /* Texto amarillo oscuro */
         }
+        /* === BARRA DE PROGRESO === */
         .progress-bar {
-            width: 100%;
-            height: 20px;
-            background-color: #e9ecef;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 10px 0;
+            width: 100%; /* Ocupar todo el ancho disponible */
+            height: 20px; /* Altura fija de la barra */
+            background-color: #e9ecef; /* Fondo gris claro */
+            border-radius: 10px; /* Bordes muy redondeados */
+            overflow: hidden; /* Ocultar contenido que sobresalga */
+            margin: 10px 0; /* Margen vertical */
         }
         .progress-fill {
-            height: 100%;
-            background-color: #28a745;
-            transition: width 0.3s ease;
+            height: 100%; /* Ocupar toda la altura de la barra */
+            background-color: #28a745; /* Color verde para indicar progreso */
+            transition: width 0.3s ease; /* Animación suave al cambiar el ancho */
         }
+        
+        /* === CONTENEDOR DEL VIDEO === */
         .video-container {
-            text-align: center;
-            margin-top: 30px;
+            text-align: center; /* Centrar video */
+            margin-top: 30px; /* Espacio arriba */
         }
         #video {
-            max-width: 100%;
-            border: 3px solid #007bff;
-            border-radius: 10px;
+            max-width: 100%; /* Responsive: no exceder el ancho del contenedor */
+            border: 3px solid #007bff; /* Borde azul grueso */
+            border-radius: 10px; /* Bordes redondeados */
         }
+        
+        /* === SECCIÓN DE INSTRUCCIONES === */
         .instructions {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 5px;
-            margin-bottom: 20px;
+            background-color: #f8f9fa; /* Fondo gris muy claro */
+            padding: 20px; /* Espaciado interno */
+            border-radius: 5px; /* Bordes ligeramente redondeados */
+            margin-bottom: 20px; /* Espacio debajo */
         }
         .instructions h3 {
-            color: #495057;
-            margin-top: 0;
+            color: #495057; /* Color gris para los subtítulos */
+            margin-top: 0; /* Sin margen superior */
         }
         .instructions ol {
-            color: #6c757d;
+            color: #6c757d; /* Color gris para las listas ordenadas */
         }
+        /* === ESTILOS PARA OBJETOS DE REFERENCIA === */
         .reference-object {
-            border: 2px solid #ddd;
-            border-radius: 10px;
-            padding: 10px;
-            text-align: center;
-            background-color: #f9f9f9;
-            max-width: 150px;
+            border: 2px solid #ddd; /* Borde gris claro */
+            border-radius: 10px; /* Bordes redondeados */
+            padding: 10px; /* Espaciado interno */
+            text-align: center; /* Centrar contenido */
+            background-color: #f9f9f9; /* Fondo gris muy claro */
+            max-width: 150px; /* Ancho máximo para mantener tamaño consistente */
         }
         .reference-object img {
-            max-width: 100px;
-            max-height: 100px;
-            border-radius: 5px;
+            max-width: 100px; /* Ancho máximo de la imagen */
+            max-height: 100px; /* Altura máxima de la imagen */
+            border-radius: 5px; /* Bordes ligeramente redondeados */
         }
         .reference-object h5 {
-            margin: 5px 0;
-            color: #333;
+            margin: 5px 0; /* Margen vertical mínimo */
+            color: #333; /* Color gris oscuro */
         }
         .reference-object button {
-            background-color: #dc3545;
-            font-size: 12px;
-            padding: 5px 10px;
+            background-color: #dc3545; /* Color rojo para botón de eliminar */
+            font-size: 12px; /* Fuente más pequeña */
+            padding: 5px 10px; /* Espaciado interno reducido */
         }
+        
+        /* === ESTILOS PARA INPUTS === */
         input[type="text"] {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
+            border: 1px solid #ddd; /* Borde gris claro */
+            border-radius: 5px; /* Bordes redondeados */
+            font-size: 14px; /* Tamaño de fuente */
         }
         input[type="file"] {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 5px;
-            background-color: white;
+            border: 1px solid #ddd; /* Borde gris claro */
+            border-radius: 5px; /* Bordes redondeados */
+            padding: 5px; /* Espaciado interno */
+            background-color: white; /* Fondo blanco */
         }
+        
+        /* === CONTENEDOR PARA TOGGLE/CHECKBOX === */
         .toggle-container {
-            background-color: #f8f9fa;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 10px;
-            margin: 10px 0;
+            background-color: #f8f9fa; /* Fondo gris claro */
+            border: 1px solid #ddd; /* Borde gris */
+            border-radius: 5px; /* Bordes redondeados */
+            padding: 10px; /* Espaciado interno */
+            margin: 10px 0; /* Margen vertical */
         }
         .toggle-container label {
-            color: #495057;
-            font-weight: normal;
-            cursor: pointer;
+            color: #495057; /* Color gris para el texto */
+            font-weight: normal; /* Peso de fuente normal (no negrita) */
+            cursor: pointer; /* Cursor de mano para indicar que es clickeable */
         }
         .toggle-container input[type="checkbox"] {
-            margin-right: 8px;
-            transform: scale(1.2);
+            margin-right: 8px; /* Espacio a la derecha del checkbox */
+            transform: scale(1.2); /* Hacer el checkbox un 20% más grande */
         }
     </style>
 </head>
 <body>
+    <!-- === CONTENEDOR PRINCIPAL DE LA APLICACIÓN === -->
     <div class="container">
+        <!-- === TÍTULO PRINCIPAL === -->
         <h1>🎯 Detector de Rostros con LBP</h1>
         
+        <!-- === SECCIÓN DE INSTRUCCIONES PARA EL USUARIO === -->
         <div class="instructions">
             <h3>📋 Instrucciones:</h3>
             <ol>
@@ -165,72 +195,98 @@
             </ol>
         </div>
 
-        <!-- Información del dispositivo -->
+        <!-- === INFORMACIÓN DEL DISPOSITIVO === -->
+        <!-- Muestra qué tipo de dispositivo se está usando y su configuración -->
         <div class="instructions">
             <h3>📱 Información del Dispositivo:</h3>
             <div id="deviceInfo" style="font-size: 14px; color: #666;">
-                <div>Tipo de dispositivo: <span id="deviceType">--</span></div>
-                <div>Método de captura: <span id="captureMethod">--</span></div>
-                <div>Resolución: <span id="resolution">--</span></div>
+                <div>Tipo de dispositivo: <span id="deviceType">--</span></div> <!-- PC, móvil, tablet -->
+                <div>Método de captura: <span id="captureMethod">--</span></div> <!-- Webcam, cámara móvil -->
+                <div>Resolución: <span id="resolution">--</span></div> <!-- Resolución del video -->
             </div>
         </div>
 
-        <!-- Panel de Métricas en Tiempo Real -->
+        <!-- === PANEL DE MÉTRICAS DEL SISTEMA EN TIEMPO REAL === -->
+        <!-- Dashboard que muestra estadísticas de rendimiento mientras la aplicación está funcionando -->
         <div class="instructions">
             <h3>📊 Métricas del Sistema en Tiempo Real:</h3>
+            <!-- Grid responsivo que se adapta al tamaño de pantalla -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+                <!-- Cada métrica tiene su propio color de fondo para fácil identificación -->
                 <div style="background: #e3f2fd; padding: 10px; border-radius: 5px;">
-                    <strong>FPS:</strong> <span id="fpsDisplay">--</span>
+                    <strong>FPS:</strong> <span id="fpsDisplay">--</span> <!-- Frames por segundo del video -->
                 </div>
                 <div style="background: #f3e5f5; padding: 10px; border-radius: 5px;">
-                    <strong>Memoria:</strong> <span id="memoryDisplay">--</span>
+                    <strong>Memoria:</strong> <span id="memoryDisplay">--</span> <!-- Uso de RAM -->
                 </div>
                 <div style="background: #e8f5e8; padding: 10px; border-radius: 5px;">
-                    <strong>CPU:</strong> <span id="cpuDisplay">--</span>
+                    <strong>CPU:</strong> <span id="cpuDisplay">--</span> <!-- Porcentaje de uso de CPU -->
                 </div>
                 <div style="background: #fff3e0; padding: 10px; border-radius: 5px;">
-                    <strong>Confianza Promedio:</strong> <span id="confidenceDisplay">--</span>
+                    <strong>Confianza Promedio:</strong> <span id="confidenceDisplay">--</span> <!-- Confianza de las detecciones -->
                 </div>
                 <div style="background: #fce4ec; padding: 10px; border-radius: 5px;">
-                    <strong>Rostros Detectados:</strong> <span id="facesDisplay">--</span>
+                    <strong>Rostros Detectados:</strong> <span id="facesDisplay">--</span> <!-- Número de rostros en frame actual -->
                 </div>
                 <div style="background: #e1f5fe; padding: 10px; border-radius: 5px;">
-                    <strong>Objetos SIFT:</strong> <span id="objectsDisplay">--</span>
+                    <strong>Objetos SIFT:</strong> <span id="objectsDisplay">--</span> <!-- Objetos específicos detectados -->
                 </div>
             </div>
         </div>
 
+        <!-- === CONTENEDOR DEL VIDEO EN TIEMPO REAL === -->
+        <!-- Aquí se muestra el stream de video con las detecciones -->
         <div class="video-container">
+            <!-- Imagen que recibe el stream de video desde Flask -->
             <img id="video" src="" alt="Video stream" style="display: none;">
         </div>
 
+        <!-- === CONTROLES PRINCIPALES === -->
+        <!-- Botones para las funciones principales de la aplicación -->
         <div class="controls">
+            <!-- Botón para entrenar el modelo SVM con el dataset -->
             <button id="trainBtn" onclick="startTraining()">
                 🎓 Entrenar Clasificador
             </button>
+            <!-- Botón para iniciar/detener la cámara (deshabilitado hasta que termine el entrenamiento) -->
             <button id="cameraBtn" onclick="toggleCamera()" disabled>
                 📹 Iniciar Cámara
             </button>
         </div>
         
+        <!-- === GESTIÓN DE OBJETOS ESPECÍFICOS === -->
+        <!-- Sección para manejar objetos de referencia para detección SIFT -->
         <div class="controls">
             <h4>🎯 Gestión de Objetos Específicos</h4>
+            
+            <!-- === SUBIR NUEVO OBJETO DE REFERENCIA === -->
             <div style="margin: 15px 0;">
+                <!-- Input para seleccionar archivo de imagen -->
                 <input type="file" id="referenceUpload" accept="image/*" style="margin: 5px;">
+                <!-- Input para dar nombre al objeto -->
                 <input type="text" id="objectName" placeholder="Nombre del objeto (ej: Rex, MiGato, etc.)" style="margin: 5px; padding: 8px; width: 250px;">
+                <!-- Botón para agregar el objeto -->
                 <button id="addReferenceBtn" onclick="addReferenceObject()">
                     ➕ Agregar Objeto de Referencia
                 </button>
             </div>
+            
+            <!-- === CONTROLES DE DETECCIÓN === -->
+            <!-- Botón para activar/desactivar la detección de objetos específicos -->
             <button id="toggleObjectsBtn" onclick="toggleObjects()" disabled>
                 🔍 Activar Detección de Objetos
             </button>
+            
+            <!-- === TOGGLE DE ANONIMIZACIÓN === -->
+            <!-- Permite elegir entre pixelar objetos o solo marcarlos con rectángulo -->
             <div class="toggle-container">
                 <label style="display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px;">
                     <input type="checkbox" id="anonymizeToggle" checked onchange="updateAnonymizationMode()">
                     <span>🎭 Anonimizar objetos detectados (desmarcar para solo mostrar marco)</span>
                 </label>
             </div>
+            
+            <!-- Botón para mostrar los objetos de referencia cargados -->
             <button id="showObjectsBtn" onclick="showReferenceObjects()" disabled>
                 👁️ Ver Objetos de Referencia
             </button>
@@ -283,34 +339,43 @@
         </div>
     </div>
 
+    <!-- === SECCIÓN JAVASCRIPT === -->
+    <!-- Toda la lógica de interactividad de la aplicación -->
     <script>
-        let cameraActive = false;
-        let trainingInProgress = false;
-        let isTrained = false;
-        let processedFilename = null;
+        // === VARIABLES GLOBALES DE ESTADO ===
+        let cameraActive = false;        // Indica si la cámara está activa
+        let trainingInProgress = false;  // Indica si el entrenamiento está en curso
+        let isTrained = false;          // Indica si el modelo ya está entrenado
+        let processedFilename = null;   // Nombre del archivo procesado para descarga
 
+        // === FUNCIÓN PRINCIPAL DE ENTRENAMIENTO ===
         function startTraining() {
+            // Prevenir múltiples entrenamientos simultáneos
             if (trainingInProgress) return;
             
+            // Actualizar estado de la interfaz
             trainingInProgress = true;
-            document.getElementById('trainBtn').disabled = true;
+            document.getElementById('trainBtn').disabled = true;  // Deshabilitar botón
             document.getElementById('status').className = 'status warning';
             document.getElementById('status').innerHTML = '⏳ Iniciando entrenamiento...';
-            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('progressContainer').style.display = 'block';  // Mostrar barra de progreso
             
-            fetch('/train')
+            // === LLAMADA AJAX AL BACKEND ===
+            fetch('/train')  // Endpoint que inicia el entrenamiento
                 .then(response => response.json())
                 .then(data => {
                     if (data.status === 'training_started') {
-                        checkTrainingProgress();
+                        checkTrainingProgress();  // Comenzar a monitorear progreso
                     } else if (data.status === 'already_trained') {
-                        trainingComplete();
+                        trainingComplete();  // El modelo ya estaba entrenado
                     }
                 })
                 .catch(error => {
+                    // Manejo de errores de red
                     console.error('Error:', error);
                     document.getElementById('status').className = 'status warning';
                     document.getElementById('status').innerHTML = '❌ Error al iniciar entrenamiento';
+                    // Restaurar estado para permitir reintento
                     trainingInProgress = false;
                     document.getElementById('trainBtn').disabled = false;
                 });
