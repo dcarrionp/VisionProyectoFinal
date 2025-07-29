@@ -1,0 +1,9 @@
+Coloca aquí imágenes de referencia de perros para el detector SIFT.
+- Formatos soportados: .jpg, .jpeg, .png
+- Recomendación: Imágenes claras con diferentes ángulos del objeto
+- Estas imágenes se usarán para extraer puntos SIFT característicos
+
+Ejemplos de nombres de archivo:
+- perro1.jpg
+- golden_retriever.png
+- labrador.jpeg

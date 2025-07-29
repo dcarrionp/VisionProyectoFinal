@@ -1,0 +1,8 @@
+Flask==2.3.3
+opencv-contrib-python==4.8.0.76
+numpy==1.24.3
+scikit-learn==1.3.0
+scikit-image==0.21.0
+Werkzeug==2.3.7
+Pillow==10.0.0
+psutil==5.9.5

@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de Rostros LBP</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+        .video-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+        #video {
+            max-width: 100%;
+            border: 3px solid #007bff;
+            border-radius: 10px;
+        }
+        .instructions {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .instructions h3 {
+            color: #495057;
+            margin-top: 0;
+        }
+        .instructions ol {
+            color: #6c757d;
+        }
+        .reference-object {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+            background-color: #f9f9f9;
+            max-width: 150px;
+        }
+        .reference-object img {
+            max-width: 100px;
+            max-height: 100px;
+            border-radius: 5px;
+        }
+        .reference-object h5 {
+            margin: 5px 0;
+            color: #333;
+        }
+        .reference-object button {
+            background-color: #dc3545;
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+        input[type="text"] {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        input[type="file"] {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 5px;
+            background-color: white;
+        }
+        .toggle-container {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .toggle-container label {
+            color: #495057;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        .toggle-container input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Detector de Rostros con LBP</h1>
+        
+        <div class="instructions">
+            <h3>📋 Instrucciones:</h3>
+            <ol>
+                <li><strong>Entrenar:</strong> Primero debes entrenar el clasificador con el dataset</li>
+                <li><strong>Esperar:</strong> El entrenamiento puede tomar varios minutos</li>
+                <li><strong>Detectar:</strong> Una vez entrenado, inicia la cámara para detectar rostros</li>
+                <li><strong>Objetos Específicos:</strong> Sube imágenes recortadas de objetos específicos que quieres identificar</li>
+                <li><strong>Identificar:</strong> Sube fotos completas para encontrar esos objetos específicos</li>
+                <li><strong>Ejemplo:</strong> Sube una foto del perro "Rex" recortada, luego una foto familiar para encontrar a "Rex"</li>
+            </ol>
+        </div>
+
+        <!-- Información del dispositivo -->
+        <div class="instructions">
+            <h3>📱 Información del Dispositivo:</h3>
+            <div id="deviceInfo" style="font-size: 14px; color: #666;">
+                <div>Tipo de dispositivo: <span id="deviceType">--</span></div>
+                <div>Método de captura: <span id="captureMethod">--</span></div>
+                <div>Resolución: <span id="resolution">--</span></div>
+            </div>
+        </div>
+
+        <!-- Panel de Métricas en Tiempo Real -->
+        <div class="instructions">
+            <h3>📊 Métricas del Sistema en Tiempo Real:</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+                <div style="background: #e3f2fd; padding: 10px; border-radius: 5px;">
+                    <strong>FPS:</strong> <span id="fpsDisplay">--</span>
+                </div>
+                <div style="background: #f3e5f5; padding: 10px; border-radius: 5px;">
+                    <strong>Memoria:</strong> <span id="memoryDisplay">--</span>
+                </div>
+                <div style="background: #e8f5e8; padding: 10px; border-radius: 5px;">
+                    <strong>CPU:</strong> <span id="cpuDisplay">--</span>
+                </div>
+                <div style="background: #fff3e0; padding: 10px; border-radius: 5px;">
+                    <strong>Confianza Promedio:</strong> <span id="confidenceDisplay">--</span>
+                </div>
+                <div style="background: #fce4ec; padding: 10px; border-radius: 5px;">
+                    <strong>Rostros Detectados:</strong> <span id="facesDisplay">--</span>
+                </div>
+                <div style="background: #e1f5fe; padding: 10px; border-radius: 5px;">
+                    <strong>Objetos SIFT:</strong> <span id="objectsDisplay">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="video-container">
+            <img id="video" src="" alt="Video stream" style="display: none;">
+        </div>
+
+        <div class="controls">
+            <button id="trainBtn" onclick="startTraining()">
+                🎓 Entrenar Clasificador
+            </button>
+            <button id="cameraBtn" onclick="toggleCamera()" disabled>
+                📹 Iniciar Cámara
+            </button>
+        </div>
+        
+        <div class="controls">
+            <h4>🎯 Gestión de Objetos Específicos</h4>
+            <div style="margin: 15px 0;">
+                <input type="file" id="referenceUpload" accept="image/*" style="margin: 5px;">
+                <input type="text" id="objectName" placeholder="Nombre del objeto (ej: Rex, MiGato, etc.)" style="margin: 5px; padding: 8px; width: 250px;">
+                <button id="addReferenceBtn" onclick="addReferenceObject()">
+                    ➕ Agregar Objeto de Referencia
+                </button>
+            </div>
+            <button id="toggleObjectsBtn" onclick="toggleObjects()" disabled>
+                🔍 Activar Detección de Objetos
+            </button>
+            <div class="toggle-container">
+                <label style="display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px;">
+                    <input type="checkbox" id="anonymizeToggle" checked onchange="updateAnonymizationMode()">
+                    <span>🎭 Anonimizar objetos detectados (desmarcar para solo mostrar marco)</span>
+                </label>
+            </div>
+            <button id="showObjectsBtn" onclick="showReferenceObjects()" disabled>
+                👁️ Ver Objetos de Referencia
+            </button>
+        </div>
+        
+        <div class="controls">
+            <h4>📷 Buscar Objetos Específicos en Imagen</h4>
+            <p style="font-size: 14px; color: #666; margin: 10px 0;">
+                Sube cualquier foto para buscar los <strong>objetos específicos</strong> que hayas agregado como referencia
+            </p>
+            <input type="file" id="imageUpload" accept="image/*" style="margin: 10px;">
+            <button id="uploadBtn" onclick="uploadImage()" disabled>
+                Buscar Objetos en Imagen
+            </button>
+        </div>
+
+        <div id="objectStatus" class="status info" style="display: none;">
+            📊 Estado de objetos: No cargados
+        </div>
+
+        <div id="uploadStatus" class="status info" style="display: none;">
+            📤 Estado de carga: Esperando imagen
+        </div>
+        
+        <div id="referenceObjectsContainer" style="display: none; margin-top: 20px;">
+            <h4>📋 Objetos de Referencia Cargados:</h4>
+            <div id="referenceObjectsList" style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;">
+                <!-- Los objetos de referencia se mostrarán aquí -->
+            </div>
+        </div>
+
+        <div id="status" class="status info">
+            ℹ️ Listo para comenzar. Haz clic en "Entrenar Clasificador" para empezar.
+        </div>
+
+        <div id="progressContainer" style="display: none;">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div id="progressText">0%</div>
+        </div>
+        
+        <div id="processedImageContainer" style="display: none; text-align: center; margin-top: 20px;">
+            <h4>� Objetos Específicos Encontrados:</h4>
+            <img id="processedImage" style="max-width: 100%; max-height: 500px; border: 2px solid #007bff; border-radius: 10px;">
+            <br>
+            <button id="downloadBtn" onclick="downloadProcessed()" style="margin-top: 10px;">
+                💾 Descargar Imagen Procesada
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let cameraActive = false;
+        let trainingInProgress = false;
+        let isTrained = false;
+        let processedFilename = null;
+
+        function startTraining() {
+            if (trainingInProgress) return;
+            
+            trainingInProgress = true;
+            document.getElementById('trainBtn').disabled = true;
+            document.getElementById('status').className = 'status warning';
+            document.getElementById('status').innerHTML = '⏳ Iniciando entrenamiento...';
+            document.getElementById('progressContainer').style.display = 'block';
+            
+            fetch('/train')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'training_started') {
+                        checkTrainingProgress();
+                    } else if (data.status === 'already_trained') {
+                        trainingComplete();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('status').className = 'status warning';
+                    document.getElementById('status').innerHTML = '❌ Error al iniciar entrenamiento';
+                    trainingInProgress = false;
+                    document.getElementById('trainBtn').disabled = false;
+                });
+        }
+
+        function checkTrainingProgress() {
+            if (!trainingInProgress) return;
+            
+            fetch('/training_progress')
+                .then(response => response.json())
+                .then(data => {
+                    const progress = data.progress;
+                    const trained = data.is_trained;
+                    
+                    document.getElementById('progressFill').style.width = progress + '%';
+                    document.getElementById('progressText').innerHTML = progress + '%';
+                    
+                    if (progress < 100 && !trained) {
+                        document.getElementById('status').innerHTML = `⚙️ Entrenando... ${progress}%`;
+                        setTimeout(checkTrainingProgress, 2000);
+                    } else if (trained) {
+                        trainingComplete();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    setTimeout(checkTrainingProgress, 2000);
+                });
+        }
+
+        function trainingComplete() {
+            trainingInProgress = false;
+            isTrained = true;
+            document.getElementById('status').className = 'status success';
+            document.getElementById('status').innerHTML = '✅ ¡Entrenamiento completado! Ya puedes usar la cámara.';
+            document.getElementById('cameraBtn').disabled = false;
+            document.getElementById('progressFill').style.width = '100%';
+            document.getElementById('progressText').innerHTML = '100%';
+        }
+
+        function toggleCamera() {
+            if (!isTrained) {
+                alert('Primero debes entrenar el clasificador');
+                return;
+            }
+            
+            if (!cameraActive) {
+                startCamera();
+            } else {
+                stopCamera();
+            }
+        }
+
+        function startCamera() {
+            fetch('/start_camera')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'camera_started') {
+                        cameraActive = true;
+                        document.getElementById('video').src = '/video_feed';
+                        document.getElementById('video').style.display = 'block';
+                        document.getElementById('cameraBtn').innerHTML = '⏹️ Detener Cámara';
+                        document.getElementById('status').className = 'status info';
+                        document.getElementById('status').innerHTML = '📹 Cámara activa - Detectando rostros...';
+                        
+                        // Iniciar monitoreo de métricas
+                        startMetricsMonitoring();
+                        updateDeviceInfo();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error al iniciar la cámara');
+                });
+        }
+
+        function stopCamera() {
+            fetch('/stop_camera')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'camera_stopped') {
+                        cameraActive = false;
+                        document.getElementById('video').style.display = 'none';
+                        document.getElementById('cameraBtn').innerHTML = '📹 Iniciar Cámara';
+                        document.getElementById('status').className = 'status info';
+                        document.getElementById('status').innerHTML = 'ℹ️ Cámara detenida. Listo para reiniciar.';
+                        
+                        // Detener monitoreo de métricas
+                        stopMetricsMonitoring();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+
+        // Verificar si ya está entrenado al cargar la página
+        window.onload = function() {
+            fetch('/training_progress')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.is_trained) {
+                        isTrained = true;
+                        document.getElementById('cameraBtn').disabled = false;
+                        document.getElementById('status').className = 'status success';
+                        document.getElementById('status').innerHTML = '✅ Clasificador ya entrenado. Puedes usar la cámara.';
+                        document.getElementById('progressContainer').style.display = 'block';
+                        document.getElementById('progressFill').style.width = '100%';
+                        document.getElementById('progressText').innerHTML = '100%';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            
+            // Verificar estado de objetos
+            checkObjectStatus();
+            
+            // Inicializar información del dispositivo
+            updateDeviceInfo();
+        };
+        
+        function loadObjects() {
+            fetch('/load_objects')
+                .then(response => response.json())
+                .then(data => {
+                    const objectStatus = document.getElementById('objectStatus');
+                    objectStatus.style.display = 'block';
+                    
+                    if (data.status === 'objects_loaded') {
+                        objectStatus.className = 'status success';
+                        objectStatus.innerHTML = `✅ ${data.count} objetos específicos cargados`;
+                        document.getElementById('toggleObjectsBtn').disabled = false;
+                        document.getElementById('uploadBtn').disabled = false; // Habilitar búsqueda en imágenes
+                        document.getElementById('showObjectsBtn').disabled = false;
+                    } else {
+                        objectStatus.className = 'status error';
+                        objectStatus.innerHTML = '❌ No se encontraron objetos de referencia. Agrega algunos objetos específicos primero.';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('objectStatus').className = 'status error';
+                    document.getElementById('objectStatus').innerHTML = '❌ Error al cargar objetos';
+                });
+        }
+        
+        function toggleObjects() {
+            fetch('/toggle_objects')
+                .then(response => response.json())
+                .then(data => {
+                    const btn = document.getElementById('toggleObjectsBtn');
+                    if (data.detect_objects) {
+                        btn.innerHTML = '🔍 Desactivar Detección';
+                        btn.style.backgroundColor = '#dc3545';
+                    } else {
+                        btn.innerHTML = '🔍 Activar Detección de Objetos';
+                        btn.style.backgroundColor = '#007bff';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+        
+        function updateAnonymizationMode() {
+            const anonymizeToggle = document.getElementById('anonymizeToggle');
+            const shouldAnonymize = anonymizeToggle.checked;
+            
+            fetch('/set_anonymization_mode', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    anonymize: shouldAnonymize
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    console.log(`Anonymization mode set to: ${shouldAnonymize}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating anonymization mode:', error);
+            });
+        }
+        
+        function checkObjectStatus() {
+            fetch('/object_status')
+                .then(response => response.json())
+                .then(data => {
+                    const objectStatus = document.getElementById('objectStatus');
+                    const toggleBtn = document.getElementById('toggleObjectsBtn');
+                    const anonymizeToggle = document.getElementById('anonymizeToggle');
+                    
+                    if (data.objects_loaded) {
+                        objectStatus.style.display = 'block';
+                        objectStatus.className = 'status success';
+                        objectStatus.innerHTML = `📊 ${data.count} objetos específicos disponibles`;
+                        toggleBtn.disabled = false;
+                        document.getElementById('uploadBtn').disabled = false; // Habilitar búsqueda en imágenes
+                        document.getElementById('showObjectsBtn').disabled = false;
+                        
+                        if (data.detect_objects) {
+                            toggleBtn.innerHTML = '🔍 Desactivar Detección';
+                            toggleBtn.style.backgroundColor = '#dc3545';
+                        } else {
+                            toggleBtn.innerHTML = '🔍 Activar Detección de Objetos';
+                            toggleBtn.style.backgroundColor = '#007bff';
+                        }
+                        
+                        // Actualizar estado del toggle de anonimización
+                        if (data.anonymize_objects !== undefined) {
+                            anonymizeToggle.checked = data.anonymize_objects;
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+        
+        function uploadImage() {
+            const fileInput = document.getElementById('imageUpload');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Por favor selecciona una imagen primero');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const uploadStatus = document.getElementById('uploadStatus');
+            uploadStatus.style.display = 'block';
+            uploadStatus.className = 'status warning';
+            uploadStatus.innerHTML = '⏳ Buscando objetos específicos en la imagen...';
+            
+            document.getElementById('uploadBtn').disabled = true;
+            
+            fetch('/upload_image', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    uploadStatus.className = 'status success';
+                    uploadStatus.innerHTML = '✅ Búsqueda completada';
+                    
+                    // Mostrar imagen procesada
+                    const processedImage = document.getElementById('processedImage');
+                    processedImage.src = 'data:image/jpeg;base64,' + data.image_data;
+                    document.getElementById('processedImageContainer').style.display = 'block';
+                    
+                    // Guardar nombre de archivo para descarga
+                    processedFilename = data.processed_filename;
+                } else {
+                    uploadStatus.className = 'status error';
+                    uploadStatus.innerHTML = '❌ Error: ' + data.message;
+                }
+                
+                document.getElementById('uploadBtn').disabled = false;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                uploadStatus.className = 'status error';
+                uploadStatus.innerHTML = '❌ Error al buscar objetos';
+                document.getElementById('uploadBtn').disabled = false;
+            });
+        }
+        
+        function addReferenceObject() {
+            const fileInput = document.getElementById('referenceUpload');
+            const objectNameInput = document.getElementById('objectName');
+            
+            const file = fileInput.files[0];
+            const objectName = objectNameInput.value.trim();
+            
+            if (!file) {
+                alert('Por favor selecciona una imagen de referencia');
+                return;
+            }
+            
+            if (!objectName) {
+                alert('Por favor proporciona un nombre para el objeto');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('object_name', objectName);
+            
+            const objectStatus = document.getElementById('objectStatus');
+            objectStatus.style.display = 'block';
+            objectStatus.className = 'status warning';
+            objectStatus.innerHTML = `⏳ Agregando objeto "${objectName}"...`;
+            
+            document.getElementById('addReferenceBtn').disabled = true;
+            
+            fetch('/add_reference_object', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    objectStatus.className = 'status success';
+                    objectStatus.innerHTML = `✅ ${data.message}`;
+                    
+                    // Limpiar inputs
+                    fileInput.value = '';
+                    objectNameInput.value = '';
+                    
+                    // Recargar lista de objetos
+                    loadObjects();
+                } else {
+                    objectStatus.className = 'status error';
+                    objectStatus.innerHTML = '❌ Error: ' + data.message;
+                }
+                
+                document.getElementById('addReferenceBtn').disabled = false;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                objectStatus.className = 'status error';
+                objectStatus.innerHTML = '❌ Error al agregar objeto';
+                document.getElementById('addReferenceBtn').disabled = false;
+            });
+        }
+        
+        function showReferenceObjects() {
+            fetch('/get_reference_objects')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('referenceObjectsContainer');
+                    const list = document.getElementById('referenceObjectsList');
+                    
+                    if (data.status === 'success' && data.objects.length > 0) {
+                        container.style.display = 'block';
+                        list.innerHTML = '';
+                        
+                        data.objects.forEach(obj => {
+                            const objDiv = document.createElement('div');
+                            objDiv.className = 'reference-object';
+                            objDiv.innerHTML = `
+                                <img src="data:image/jpeg;base64,${obj.image_data}" alt="${obj.name}">
+                                <h5>${obj.name}</h5>
+                                <p style="font-size: 12px; color: #666;">${obj.keypoints} puntos SIFT</p>
+                                <button onclick="deleteReferenceObject('${obj.name}')">🗑️ Eliminar</button>
+                            `;
+                            list.appendChild(objDiv);
+                        });
+                    } else {
+                        container.style.display = 'none';
+                        alert('No hay objetos de referencia cargados');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error al cargar objetos de referencia');
+                });
+        }
+        
+        function deleteReferenceObject(objectName) {
+            if (confirm(`¿Estás seguro de que quieres eliminar el objeto "${objectName}"?`)) {
+                fetch(`/delete_reference_object/${objectName}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            showReferenceObjects(); // Actualizar lista
+                            loadObjects(); // Actualizar estado
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error al eliminar objeto');
+                    });
+            }
+        }
+        
+        function downloadProcessed() {
+            if (processedFilename) {
+                window.open('/download_processed/' + processedFilename, '_blank');
+            }
+        }
+
+        // Sistema de métricas en tiempo real
+        let metricsInterval;
+        
+        function startMetricsMonitoring() {
+            metricsInterval = setInterval(updateMetrics, 2000); // Actualizar cada 2 segundos
+        }
+        
+        function stopMetricsMonitoring() {
+            if (metricsInterval) {
+                clearInterval(metricsInterval);
+                resetMetricsDisplay();
+            }
+        }
+        
+        function updateMetrics() {
+            fetch('/get_system_metrics')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('fpsDisplay').textContent = data.fps || '--';
+                        document.getElementById('memoryDisplay').textContent = data.memory || '--';
+                        document.getElementById('cpuDisplay').textContent = data.cpu || '--';
+                        document.getElementById('confidenceDisplay').textContent = data.confidence || '--';
+                        document.getElementById('facesDisplay').textContent = data.faces_detected || '0';
+                        document.getElementById('objectsDisplay').textContent = data.objects_detected || '0';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error getting metrics:', error);
+                });
+        }
+        
+        function resetMetricsDisplay() {
+            document.getElementById('fpsDisplay').textContent = '--';
+            document.getElementById('memoryDisplay').textContent = '--';
+            document.getElementById('cpuDisplay').textContent = '--';
+            document.getElementById('confidenceDisplay').textContent = '--';
+            document.getElementById('facesDisplay').textContent = '--';
+            document.getElementById('objectsDisplay').textContent = '--';
+        }
+
+        // Detectar información del dispositivo
+        function updateDeviceInfo() {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const isTablet = /iPad|Android(?=.*Mobile)/i.test(navigator.userAgent);
+            
+            let deviceType = 'PC/Laptop';
+            let captureMethod = 'Webcam USB/Integrada';
+            
+            if (isMobile && !isTablet) {
+                deviceType = 'Teléfono Móvil';
+                captureMethod = 'Cámara Móvil';
+            } else if (isTablet) {
+                deviceType = 'Tablet';
+                captureMethod = 'Cámara Tablet';
+            }
+            
+            document.getElementById('deviceType').textContent = deviceType;
+            document.getElementById('captureMethod').textContent = captureMethod;
+            
+            // Detectar resolución si hay video
+            const video = document.getElementById('video');
+            if (video) {
+                video.onloadedmetadata = function() {
+                    document.getElementById('resolution').textContent = 
+                        `${video.videoWidth}x${video.videoHeight}`;
+                };
+            } else {
+                document.getElementById('resolution').textContent = 'Detectando...';
+            }
+        }
+
+        // Las funciones de cámara ya están integradas con métricas arriba
+    </script>
+</body>
+</html>
